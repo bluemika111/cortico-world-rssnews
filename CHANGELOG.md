@@ -16,3 +16,6 @@
 - **去重与存档**：按 `guid` / `id` / 链接去重，每个源记最近 400 个键；消息存档默认 500 条。
 - **网络**：内建超时、体积上限、`ETag` / `Last-Modified` 条件请求（304 时不重复下载）、
   HTML / JSON 响应的明确报错。
+- **包名**：`cortico-world-rssnews`，显示名「RSS 新闻 / RSS News」——GitHub 上已有别人的同名仓库，
+  换个名字避开。world id 仍是 `rss`，所以 `worlds.rss` 配置段、`rss_fetch` / `rss_index`、
+  `rss.new_items` 与已有订阅数据都不受影响。
