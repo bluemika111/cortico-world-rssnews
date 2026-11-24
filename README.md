@@ -44,15 +44,17 @@
 
 ## 安装
 
-先拿到这个包（仓库里带着构建好的 `dist/webui.js`，clone 下来就是可用的）：
+先拿到这个包，两种来源任选：
 
 ```bash
-git clone https://github.com/bluemika111/cortico-world-rssnews
+npm i cortico-world-rssnews          # 已发布到 npm（包页：https://www.npmjs.com/package/cortico-world-rssnews）
+git clone https://github.com/bluemika111/cortico-world-rssnews   # 仓库里带着构建好的 dist/webui.js，clone 即可用
 ```
 
-Coopanion 的扩展装在部署的 `extensions/` 里。两种方式：
+Coopanion 的扩展装在部署的 `extensions/` 里。三种方式：
 
-**A. 用界面装（推荐）**：Coopanion → 扩展 →「从本机目录安装」→ 选 clone 下来的目录。
+**A. 用界面装（推荐）**：Coopanion → 扩展 →「从本机目录安装」→ 选 clone 下来的目录；
+npm 上审核通过后也可以直接在扩展页「从 npm 安装」搜 `cortico-world-rssnews`。
 Coopanion 会自己把它登记进扩展目录并装好依赖，不需要在它的软件目录里手动跑安装脚本。
 
 **B. 手工登记**（本地开发就这么用）：
@@ -62,7 +64,7 @@ Coopanion 会自己把它登记进扩展目录并装好依赖，不需要在它�
 {
   "dependencies": {
     "cortico-world-rssnews": "link:<clone 下来的目录>" // 本地开发
-    // "cortico-world-rssnews": "^0.1.0"               // 发布到 npm 之后
+    // "cortico-world-rssnews": "^0.1.0"               // 从 npm 装
   }
 }
 ```
