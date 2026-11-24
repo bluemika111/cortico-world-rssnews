@@ -4,7 +4,7 @@
 
 ## 一句话
 
-`cortico-world-rss` 是 Cortico World 扩展（world id `rss`），给 Coopanion 加 RSS / Atom 订阅：
+`cortico-world-rssnews` 是 Cortico World 扩展（world id `rss`），给 Coopanion 加 RSS / Atom 订阅：
 多源、每源独立节奏、新消息以事件递给她，外加「立即拉取」与「关键词索引」两个工具。
 
 ## 结构

@@ -23,7 +23,7 @@ export interface RssStrings {
 }
 
 const zh: RssStrings = {
-  moduleLabel: 'RSS / Atom 订阅',
+  moduleLabel: 'RSS 新闻',
   panelFeedsTitle: 'Rss/Atom 管理',
   panelFeedsDescription: '订阅源清单：地址、拉取节奏、超时、一次递几条、允不允许她自己来拉。',
   panelMessagesTitle: 'Rss/Atom 源的消息',
@@ -44,7 +44,7 @@ const zh: RssStrings = {
 };
 
 const en: RssStrings = {
-  moduleLabel: 'RSS / Atom',
+  moduleLabel: 'RSS News',
   panelFeedsTitle: 'RSS / Atom feeds',
   panelFeedsDescription: 'The subscription list: address, cadence, timeout, how many items per pull, and whether she may pull it herself.',
   panelMessagesTitle: 'Feed messages',

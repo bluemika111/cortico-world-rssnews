@@ -28,7 +28,7 @@ describe('扩展契约', () => {
 
   it('包的 id 与定义一致，并且有浏览器端产物声明', () => {
     expect(RSS.id).toBe('rss');
-    expect(pkg.name).toBe('cortico-world-rss');
+    expect(pkg.name).toBe('cortico-world-rssnews');
     const cortico = pkg.cortico as Record<string, unknown>;
     expect(cortico.webUiClient).toBe('dist/webui.js');
     expect(pkg.files).toContain('dist');

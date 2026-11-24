@@ -1,17 +1,17 @@
 {
-  "name": "cortico-world-rss",
+  "name": "cortico-world-rssnews",
   "version": "0.1.0",
   "type": "module",
   "description": "Cortico World: subscribe to RSS/Atom feeds, pull them on a per-feed schedule, and hand new items to Coo",
   "license": "MIT",
   "author": "bluemika111",
-  "homepage": "https://github.com/bluemika111/cortico-world-rss#readme",
+  "homepage": "https://github.com/bluemika111/cortico-world-rssnews#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bluemika111/cortico-world-rss.git"
+    "url": "git+https://github.com/bluemika111/cortico-world-rssnews.git"
   },
   "bugs": {
-    "url": "https://github.com/bluemika111/cortico-world-rss/issues"
+    "url": "https://github.com/bluemika111/cortico-world-rssnews/issues"
   },
   "keywords": [
     "cortico-world",
@@ -29,15 +29,15 @@
   "cortico": {
     "kind": "world",
     "api": 6,
-    "displayName": "RSS / Atom",
+    "displayName": "RSS News",
     "webUiClient": "dist/webui.js",
     "locales": {
       "zh": {
-        "displayName": "RSS / Atom 订阅",
+        "displayName": "RSS 新闻",
         "description": "订阅任意多个 RSS / Atom 源，每个源自己决定多久拉一次、几点拉、超时多长、一次最多递几条新消息；新消息以事件交给她，她也可以按需立即拉取或按关键词索引订阅源。"
       },
       "en": {
-        "displayName": "RSS / Atom",
+        "displayName": "RSS News",
         "description": "Subscribe to any number of RSS / Atom feeds; each feed decides its own interval, clock times, timeout, and how many new items to hand over at once. New items arrive as events, and she can pull or search the feeds on demand."
       }
     },

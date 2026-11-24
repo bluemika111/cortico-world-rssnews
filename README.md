@@ -1,9 +1,9 @@
-# cortico-world-rss
+# cortico-world-rssnews
 
-给 Coopanion（Cortico）加一份 **RSS / Atom 订阅**：订阅任意多个源，每个源按自己的节奏被拉下来，新消息以
+给 Coopanion（Cortico）加一份 **RSS 新闻**：订阅任意多个 RSS / Atom 源，每个源按自己的节奏被拉下来，新消息以
 事件递给她；她也可以按需拉取，或者按关键词翻订阅源。
 
-仓库：<https://github.com/bluemika111/cortico-world-rss>（MIT）
+仓库：<https://github.com/bluemika111/cortico-world-rssnews>（MIT）
 
 世界页有两个页签：
 
@@ -47,7 +47,7 @@
 先拿到这个包（仓库里带着构建好的 `dist/webui.js`，clone 下来就是可用的）：
 
 ```bash
-git clone https://github.com/bluemika111/cortico-world-rss
+git clone https://github.com/bluemika111/cortico-world-rssnews
 ```
 
 Coopanion 的扩展装在部署的 `extensions/` 里。两种方式：
@@ -61,13 +61,13 @@ Coopanion 会自己把它登记进扩展目录并装好依赖，不需要在它�
 // <部署>/extensions/package.json
 {
   "dependencies": {
-    "cortico-world-rss": "link:<clone 下来的目录>" // 本地开发
-    // "cortico-world-rss": "^0.1.0"               // 发布到 npm 之后
+    "cortico-world-rssnews": "link:<clone 下来的目录>" // 本地开发
+    // "cortico-world-rssnews": "^0.1.0"               // 发布到 npm 之后
   }
 }
 ```
 
-在 `extensions/` 里跑一次它的包管理器安装，重启 Coopanion，然后在设置 → World 里打开「RSS / Atom 订阅」。
+在 `extensions/` 里跑一次它的包管理器安装，重启 Coopanion，然后在设置 → World 里打开「RSS 新闻」。
 `worlds.rss.enabled` 默认是 `false`，由部署决定什么时候启用。
 
 首次挂载会立刻按节奏走一拍：间隔到点、或者从没拉过的源会马上拉一轮，之后每 15 秒检查一次谁到点了。
