@@ -1,0 +1,12 @@
+node_modules/
+scratch/
+.test-tmp/
+*.log
+*.tsbuildinfo
+scripts/.tests.mjs
+scripts/.gen-describe.mjs
+.npm-cache/
+
+# dist/ 里的 webui.js 是构建产物，但**故意提交**：
+# 用「从本机目录安装」或直接 clone 的人拿到的是能用的包，而不是缺面板产物的半成品。
+# 改了 src/webui 之后记得 `npm run build` 再提交。

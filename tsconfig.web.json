@@ -1,0 +1,16 @@
+{
+  // 浏览器侧：WebUI 面板与它的测试（需要 DOM）。只 import type 框架模块，运行时不带上游代码。
+  // 类型上仍需 node：框架的类型文件引用了 node 内置模块。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": [
+    "src/webui/**/*.ts",
+    "tests/webui.test.ts",
+    "tests/helpers/mock-panel-host.ts",
+    "tests/helpers/jsdom.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

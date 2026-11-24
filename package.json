@@ -1,0 +1,69 @@
+{
+  "name": "cortico-world-rss",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Cortico World: subscribe to RSS/Atom feeds, pull them on a per-feed schedule, and hand new items to Coo",
+  "license": "MIT",
+  "author": "bluemika111",
+  "homepage": "https://github.com/bluemika111/cortico-world-rss#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bluemika111/cortico-world-rss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bluemika111/cortico-world-rss/issues"
+  },
+  "keywords": [
+    "cortico-world",
+    "cortico",
+    "rss",
+    "atom",
+    "feed",
+    "news"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.28.6",
+  "main": "./src/index.ts",
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "RSS / Atom",
+    "webUiClient": "dist/webui.js",
+    "locales": {
+      "zh": {
+        "displayName": "RSS / Atom 订阅",
+        "description": "订阅任意多个 RSS / Atom 源，每个源自己决定多久拉一次、几点拉、超时多长、一次最多递几条新消息；新消息以事件交给她，她也可以按需立即拉取或按关键词索引订阅源。"
+      },
+      "en": {
+        "displayName": "RSS / Atom",
+        "description": "Subscribe to any number of RSS / Atom feeds; each feed decides its own interval, clock times, timeout, and how many new items to hand over at once. New items arrive as events, and she can pull or search the feeds on demand."
+      }
+    },
+    "tags": [],
+    "describe": "describe.json"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "describe.json"
+  ],
+  "scripts": {
+    "build": "esbuild src/webui/client.ts --bundle --format=esm --platform=browser --target=es2020 --outfile=dist/webui.js",
+    "gen:describe": "esbuild scripts/gen-describe.ts --bundle --platform=node --format=esm --outfile=scripts/.gen-describe.mjs && node scripts/.gen-describe.mjs",
+    "test": "vitest run",
+    "test:local": "esbuild scripts/run-tests.ts --bundle --platform=node --format=esm --alias:vitest=./scripts/vitest-shim.ts --external:jsdom --outfile=scripts/.tests.mjs && node scripts/.tests.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.scripts.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "cortico": "^0.2.3",
+    "esbuild": "^0.28.2",
+    "jsdom": "^31.0.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

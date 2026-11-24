@@ -1,0 +1,16 @@
+{
+  // 本地测试入口要 import 面板测试（用到 DOM），所以这一份带 DOM lib。
+  // Node 侧的纯净检查由 tsconfig.json 负责，它在没有 DOM 的前提下检查 src 与 Node 测试。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "tests/webui.test.ts",
+    "tests/helpers/mock-panel-host.ts",
+    "tests/helpers/jsdom.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}
