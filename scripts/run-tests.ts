@@ -8,6 +8,7 @@ import '../tests/schedule.test.ts';
 import '../tests/search.test.ts';
 import '../tests/store.test.ts';
 import '../tests/world.test.ts';
+import '../tests/lowcost.test.ts';
 import '../tests/webui.test.ts';
 import '../tests/manifest.test.ts';
 import '../tests/real-feed.test.ts';

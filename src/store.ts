@@ -57,6 +57,8 @@ function isHttpUrl(value: string): boolean {
 export class FeedStore {
   private feeds: FeedRecord[] = [];
   private archiveEntries: ArchiveEntry[] = [];
+  /** 下一条消息的编号；编号只增不减，删档也不回收，免得旧编号指到别的消息。 */
+  private nextSeq = 0;
   private loaded = false;
   private readonly dir: string | null;
 
@@ -105,10 +107,39 @@ export class FeedStore {
         .filter((feed): feed is FeedRecord => !!feed && typeof feed === 'object' && typeof feed.url === 'string')
         .map((feed) => this.normalizeLoaded(feed));
     }
-    const archive = this.readJson<{ version?: number; entries?: ArchiveEntry[] }>(ARCHIVE_FILE);
+    const archive = this.readJson<{ version?: number; nextSeq?: number; entries?: ArchiveEntry[] }>(ARCHIVE_FILE);
     if (archive?.entries && Array.isArray(archive.entries)) {
       this.archiveEntries = archive.entries.filter((entry): entry is ArchiveEntry => !!entry && typeof entry === 'object');
+      this.assignMissingSeq(typeof archive.nextSeq === 'number' ? archive.nextSeq : 0);
     }
+  }
+
+  /**
+   * 老版本存档没有 `seq`：按「谁更旧谁号小」补齐，保证模型手里的编号在下一次读取后还是同一条。
+   * 文件里已经记着 `nextSeq` 时直接用它，避免重号。
+   */
+  private assignMissingSeq(nextSeqFromFile: number): void {
+    const missing = this.archiveEntries.filter((entry) => typeof entry.seq !== 'number' || !Number.isFinite(entry.seq));
+    let next = Math.max(
+      nextSeqFromFile,
+      ...this.archiveEntries.map((entry) => (typeof entry.seq === 'number' && Number.isFinite(entry.seq) ? entry.seq : 0)),
+    );
+    if (!missing.length) {
+      this.nextSeq = next;
+      return;
+    }
+    // 存档是「新的在前」，倒着走就是时间顺序。
+    const ordered = [...missing].sort((a, b) => {
+      const ak = a.publishedAt ?? a.fetchedAt ?? '';
+      const bk = b.publishedAt ?? b.fetchedAt ?? '';
+      return ak.localeCompare(bk);
+    });
+    for (const entry of ordered) {
+      next += 1;
+      entry.seq = next;
+    }
+    this.nextSeq = next;
+    this.persistArchive();
   }
 
   /** 老版本/手改的文件可能有缺字段，补上能用的默认值。 */
@@ -132,7 +163,7 @@ export class FeedStore {
   }
 
   private persistArchive(): void {
-    this.writeJson(ARCHIVE_FILE, { version: ARCHIVE_VERSION, entries: this.archiveEntries });
+    this.writeJson(ARCHIVE_FILE, { version: ARCHIVE_VERSION, nextSeq: this.nextSeq, entries: this.archiveEntries });
   }
 
   // ── 订阅 ────────────────────────────────────────────────────────────
@@ -267,18 +298,40 @@ export class FeedStore {
     return this.archiveEntries;
   }
 
-  /** 新消息放最前面；同一个源的同一条只留一份。 */
-  pushArchive(entries: readonly ArchiveEntry[]): void {
+  /**
+   * 新消息放最前面；同一个源的同一条只留一份。
+   * 返回**这次真正写进存档的那些条目**（已经带好 `seq`），调用方拿它去拼给模型的编号。
+   */
+  pushArchive(entries: readonly (Omit<ArchiveEntry, 'seq'> & { seq?: number })[]): ArchiveEntry[] {
     this.load();
-    if (!entries.length) return;
+    if (!entries.length) return [];
     const fresh = entries.filter((entry) => !this.archiveEntries.some(
       (existing) => existing.feedId === entry.feedId && existing.entryId === entry.entryId,
     ));
-    if (!fresh.length) return;
-    this.archiveEntries = [...fresh, ...this.archiveEntries]
+    if (!fresh.length) return [];
+    const stored: ArchiveEntry[] = fresh.map((entry) => {
+      this.nextSeq += 1;
+      return { ...entry, seq: this.nextSeq };
+    });
+    this.archiveEntries = [...stored, ...this.archiveEntries]
       .sort((a, b) => (b.publishedAt ?? b.fetchedAt).localeCompare(a.publishedAt ?? a.fetchedAt))
       .slice(0, Math.max(20, this.opts.archiveLimit()));
     this.persistArchive();
+    return stored;
+  }
+
+  /** 按编号取条目；认不出返回 undefined。 */
+  bySeq(seq: number): ArchiveEntry | undefined {
+    this.load();
+    return this.archiveEntries.find((entry) => entry.seq === seq);
+  }
+
+  /** 存档里现有的编号范围，给「编号写错了」这类回执用。 */
+  seqRange(): { min: number; max: number } | null {
+    this.load();
+    if (!this.archiveEntries.length) return null;
+    const seqs = this.archiveEntries.map((entry) => entry.seq);
+    return { min: Math.min(...seqs), max: Math.max(...seqs) };
   }
 
   clearArchive(feedId?: string): number {

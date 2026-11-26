@@ -5,12 +5,19 @@
 import type { FeedRecord } from './types.ts';
 
 export interface ItemView {
+  /** 存档编号，展示成 `#12`；低消耗模式下模型靠它点名要读全文。 */
+  seq?: number;
   title: string;
   link: string;
   body: string;
   summary: string;
   publishedAt?: string;
   isNew?: boolean;
+}
+
+/** `#12`。没有编号时返回空串，调用方会退化成分行列表。 */
+export function seqTag(seq: number | undefined): string {
+  return typeof seq === 'number' && Number.isFinite(seq) ? `#${seq}` : '';
 }
 
 export interface FetchResultView {
@@ -59,11 +66,19 @@ function bodyOf(item: ItemView, maxChars: number): string {
   return `${text.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
-/** 一条消息写成两三行：时间 + 标题，正文一段，链接一行。 */
-export function renderItem(item: ItemView, opts: { timezone: string; maxChars: number; marker?: string }): string {
+/**
+ * 一条消息写成两三行：时间 + 标题，正文一段，链接一行。
+ * `compact`（低消耗模式）时只留 `#编号 · 时间 · 标题`，正文与链接都不给——要读正文用 rss_read。
+ */
+export function renderItem(
+  item: ItemView,
+  opts: { timezone: string; maxChars: number; marker?: string; compact?: boolean },
+): string {
   const when = fmtLocal(item.publishedAt, opts.timezone);
-  const head = [opts.marker, when, item.title].filter((part) => !!part).join(' · ');
+  const tag = seqTag(item.seq);
+  const head = [opts.marker, tag, when, item.title].filter((part) => !!part).join(' · ');
   const lines = [`· ${head}`];
+  if (opts.compact) return lines.join('\n');
   const body = bodyOf(item, opts.maxChars);
   if (body) lines.push(...body.split('\n').map((line) => `  ${line}`));
   if (item.link) lines.push(`  ${item.link}`);
@@ -88,20 +103,34 @@ export function renderFeedList(feeds: readonly FeedRecord[]): string {
 }
 
 /** 定时拉取抓到新消息时推出的事件正文。 */
-export function renderNewItemsEvent(result: FetchResultView, timezone: string, maxChars: number): string {
+export function renderNewItemsEvent(
+  result: FetchResultView,
+  timezone: string,
+  maxChars: number,
+  lowCost = false,
+): string {
   const { feed, items } = result;
   const count = result.newCount;
   const head = `[RSS] ${feed.title} 有 ${count} 条新消息`;
   const lines: string[] = [head];
   for (const item of items) {
-    lines.push(renderItem(item, { timezone, maxChars, marker: item.isNew === false ? '此前' : '新' }));
+    lines.push(renderItem(item, {
+      timezone,
+      maxChars,
+      marker: item.isNew === false ? '此前' : '新',
+      compact: lowCost,
+    }));
   }
   if (result.skipped > 0) {
     lines.push(`（还有 ${result.skipped} 条更新的没一并递上：这个源一次最多给 ${feed.maxNewItems} 条）`);
   }
   lines.push('');
   lines.push(
-    `要更多或者要按关键词翻，用 rss_index（这个源的 id 是 ${feed.id}）；想马上再拉一次用 rss_fetch。`,
+    lowCost
+      ? `低消耗模式：上面只有编号、来源、时间、标题。要读哪条的全文，把它的编号交给 rss_read（比如 rss_read {"ids":["${
+        seqTag(items[0]?.seq) || '#1'
+      }"]}）。要更多或者按关键词翻用 rss_index，想马上再拉一次用 rss_fetch（这个源的 id 是 ${feed.id}）。`
+      : `要更多或者要按关键词翻，用 rss_index（这个源的 id 是 ${feed.id}）；想马上再拉一次用 rss_fetch。`,
   );
   return lines.join('\n');
 }
@@ -110,6 +139,8 @@ export interface FetchDigestOptions {
   timezone: string;
   maxChars: number;
   notes?: readonly string[];
+  /** 低消耗模式：只列编号、时间、标题。 */
+  lowCost?: boolean;
 }
 
 /** `rss_fetch` 的回执：每个源一段。 */
@@ -138,16 +169,26 @@ export function renderFetchDigest(results: readonly FetchResultView[], opts: Fet
     }
     if (result.newCount === 0) lines.push('  没有新消息；下面是最近的几条：');
     result.items.forEach((item, index) => {
-      lines.push(renderItem(item, { timezone: opts.timezone, maxChars: opts.maxChars, marker: `${index + 1}.${item.isNew === false ? '（已读过）' : ''}` }));
+      lines.push(renderItem(item, {
+        timezone: opts.timezone,
+        maxChars: opts.maxChars,
+        marker: `${index + 1}.${item.isNew === false ? '（已读过）' : ''}`,
+        compact: opts.lowCost === true,
+      }));
     });
     if (result.skipped > 0) {
       lines.push(`  （另有 ${result.skipped} 条更新的没递上来：这个源一次最多给 ${result.feed.maxNewItems} 条；要看全用 rss_index）`);
     }
   }
+  if (opts.lowCost) {
+    lines.push('');
+    lines.push('低消耗模式：只有编号、来源、时间、标题。要读全文就把编号交给 rss_read。');
+  }
   return lines.join('\n');
 }
 
 export interface IndexHit {
+  seq?: number;
   feed: FeedRecord;
   title: string;
   link: string;
@@ -170,6 +211,8 @@ export interface IndexDigestOptions {
   feedCount: number;
   truncated: number;
   hits: readonly IndexHit[];
+  /** 低消耗模式：命中只列编号与标题，不附正文。 */
+  lowCost?: boolean;
 }
 
 /** `rss_index` 的回执：命中几条、这一页是哪几条、下一页怎么取。 */
@@ -197,7 +240,14 @@ export function renderIndexDigest(opts: IndexDigestOptions): string {
   opts.hits.forEach((hit, index) => {
     const when = fmtLocal(hit.publishedAt, opts.timezone);
     const number = (opts.page - 1) * opts.pageSize + index + 1;
-    lines.push(`${number}. 「${hit.feed.title}」${when ? `${when} · ` : ''}${hit.title}`);
+    const tag = seqTag(hit.seq);
+    lines.push(`${number}. ${tag ? `${tag} · ` : ''}「${hit.feed.title}」${when ? `${when} · ` : ''}${hit.title}`);
+    if (opts.lowCost) {
+      if (hit.matched.length && hit.matched.length < opts.keywords.length) {
+        lines.push(`   命中：${hit.matched.join('、')}`);
+      }
+      return;
+    }
     const body = bodyOf({ title: hit.title, link: hit.link, body: hit.body, summary: hit.summary }, opts.maxChars);
     if (body) lines.push(...body.split('\n').map((line) => `   ${line}`));
     if (hit.link) lines.push(`   ${hit.link}`);
@@ -211,6 +261,69 @@ export function renderIndexDigest(opts: IndexDigestOptions): string {
     const next = Math.min(opts.pageCount, opts.page + 1);
     lines.push('');
     lines.push(`还有 ${rest} 条：把 page 传 ${next} 再调一次。`);
+  }
+  if (opts.lowCost) {
+    lines.push('');
+    lines.push('低消耗模式：只给了编号与标题。要读哪条的全文，把编号交给 rss_read。');
+  }
+  return lines.join('\n');
+}
+
+/** `rss_read` 的回执：把点名的几条完整正文摊开。 */
+export interface ReadResultOptions {
+  timezone: string;
+  /** 每条最长多少字；0 表示不截断（存档本来就有限长）。 */
+  maxChars: number;
+  entries: readonly ReadEntry[];
+  /** 点到的编号不存在，或已经不在存档里。 */
+  missing: readonly number[];
+  /** 编号格式认不出来的原始输入。 */
+  unparsed: readonly string[];
+  /** 存档里现有编号的范围。 */
+  range: { min: number; max: number } | null;
+}
+
+export interface ReadEntry {
+  seq: number;
+  feedTitle: string;
+  title: string;
+  link: string;
+  body: string;
+  summary: string;
+  publishedAt?: string;
+  fetchedAt?: string;
+}
+
+export function renderReadResult(opts: ReadResultOptions): string {
+  const lines: string[] = [];
+  if (!opts.entries.length) {
+    lines.push('没有读到任何消息。');
+    if (opts.missing.length) lines.push(`这几个编号不在存档里：${opts.missing.map((seq) => `#${seq}`).join('、')}。`);
+    if (opts.unparsed.length) lines.push(`这几个认不出编号：${opts.unparsed.join('、')}（要的是 #12 或 12 这种）。`);
+    if (opts.range) {
+      lines.push(`现在存档里的编号从 #${opts.range.min} 到 #${opts.range.max}；越老的越可能已经被存档上限挤掉了。`);
+    } else {
+      lines.push('存档现在是空的：消息页签拉一次就有了。');
+    }
+    return lines.join('\n');
+  }
+
+  lines.push(`读了 ${opts.entries.length} 条：`);
+  opts.entries.forEach((entry, index) => {
+    const when = fmtLocal(entry.publishedAt ?? entry.fetchedAt, opts.timezone);
+    lines.push('');
+    lines.push(`${index + 1}. #${entry.seq} · 「${entry.feedTitle}」${when ? `${when} · ` : ''}${entry.title}`);
+    const text = opts.maxChars > 0 ? bodyOf({ title: entry.title, link: entry.link, body: entry.body, summary: entry.summary }, opts.maxChars) : (entry.body || entry.summary).trim();
+    if (text) lines.push(...text.split('\n').map((line) => `   ${line}`));
+    if (entry.link) lines.push(`   ${entry.link}`);
+  });
+
+  const problems: string[] = [];
+  if (opts.missing.length) problems.push(`不在存档里：${opts.missing.map((seq) => `#${seq}`).join('、')}`);
+  if (opts.unparsed.length) problems.push(`认不出：${opts.unparsed.join('、')}`);
+  if (problems.length) {
+    lines.push('');
+    lines.push(`（${problems.join('；')}${opts.range ? `；现有编号 #${opts.range.min}–#${opts.range.max}` : ''}）`);
   }
   return lines.join('\n');
 }

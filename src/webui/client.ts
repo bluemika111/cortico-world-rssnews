@@ -32,6 +32,8 @@ interface FeedsState {
 }
 
 interface MessageRow {
+  /** 消息编号，展示成 `#12`，和模型手里的是同一个。 */
+  seq?: number;
   feedId: string;
   feedTitle: string;
   title: string;
@@ -487,13 +489,14 @@ const messagesPanel: WebUiPanel = {
       const titleLine = list.append(row.title, 'plain');
       titleLine.style.cursor = 'pointer';
       titleLine.title = S.readMore;
-      list.append(`${row.timeText} · ${row.feedTitle}`, 'dim');
+      const tag = typeof row.seq === 'number' ? `#${row.seq} · ` : '';
+      list.append(`${tag}${row.timeText} · ${row.feedTitle}`, 'dim');
       if (row.summary && row.summary !== row.title) list.append(row.summary, 'plain');
       list.append('', 'dim');
 
       const open = () => {
         const body = ui.h('div');
-        body.append(ui.msgline(`${row.feedTitle} · ${row.timeText}`));
+        body.append(ui.msgline(`${typeof row.seq === 'number' ? `#${row.seq} · ` : ''}${row.feedTitle} · ${row.timeText}`));
         const text = ui.h('div');
         text.textContent = row.body || row.summary || S.emptyBody;
         text.style.whiteSpace = 'pre-wrap';

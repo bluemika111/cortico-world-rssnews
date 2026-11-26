@@ -5,7 +5,8 @@
 ## 一句话
 
 `cortico-world-rssnews` 是 Cortico World 扩展（world id `rss`），给 Coopanion 加 RSS / Atom 订阅：
-多源、每源独立节奏、新消息以事件递给她，外加「立即拉取」与「关键词索引」两个工具。
+多源、每源独立节奏、新消息以事件递给她，外加「立即拉取」「关键词索引」「按编号读全文」三个工具；
+`worlds.rss.lowCost` 打开时只递编号与标题，正文靠 `rss_read` 补读。
 
 ## 结构
 
@@ -26,7 +27,7 @@
 
 ## 别重新验证的事实
 
-- 契约 `cortico.api = 6`，与 Coopanion 0.2.20 一致；工具名必须带 `<短名>_` 前缀，所以是 `rss_fetch` / `rss_index`。
+- 契约 `cortico.api = 6`，与 Coopanion 0.2.20 一致；工具名必须带 `<短名>_` 前缀，所以是 `rss_fetch` / `rss_index` / `rss_read`。
 - **`webUi().panels` 就是页签**：宿主把没有 `slot` 的面板渲染成世界页的标签页（`webui-pages/host.ts` 的 `tabbed()`）。
   顺序即显示顺序，`feeds` 在前、`messages` 在后。
 - 面板数据面是 `invoke(panel, method, args)`，第一个参数永远是面板 id。写测试时最容易错的就是这里。
@@ -37,6 +38,13 @@
 - 12 秒内重复调用 `rss_fetch` 复用上次结果，45 秒内重复索引复用上次下载（翻页时用）。
 - 首轮 304 不会走解析；`ETag` / `Last-Modified` 存在订阅记录里。
 - 一次拉取最多往存档写 30 条；存档总量受 `worlds.rss.archiveLimit` 约束。
+- **编号（`seq`）由 `FeedStore.pushArchive` 分配**：只增不减、清档不回收，`nextSeq` 存在 `archive.json` 顶层；
+  老档没编号时 `assignMissingSeq()` 按 `publishedAt` 从旧到新补一次并落盘。
+  事件 / `rss_fetch` / `rss_index` / 消息页签用的都是这个号，改编号逻辑要四处一起看。
+- **低消耗模式（`worlds.rss.lowCost`）只改「递什么」**：`renderItem({compact})`、`renderFetchDigest({lowCost})`、
+  `renderIndexDigest({lowCost})` 三处；正文一直在存档里，`rss_read` 两种模式下都能读。
+- `rss_read` 一次最多 10 条（`READ_LIMIT`），超出的在回执里点名；`parseSeq()` 只认 ASCII 数字与全角 `＃`，
+  不认中文数字。
 
 ## 踩过的坑
 

@@ -1,6 +1,7 @@
 /**
  * RSS / Atom 订阅：每个源按自己的节奏被拉下来，新消息写成事件递给她。
- * 两个工具给她主动权：`rss_fetch` 立即拉取，`rss_index` 按关键词翻订阅源。
+ * 三个工具给她主动权：`rss_fetch` 立即拉取，`rss_index` 按关键词翻订阅源，
+ * `rss_read` 按编号读某条的全文（低消耗模式下这就是唯一看正文的入口）。
  *
  * 这个文件只管「什么时候拉、拉回来算新还是旧、递给谁」；解析、网络、落盘、文案各有自己的模块。
  */
@@ -20,9 +21,11 @@ import {
   renderFetchDigest,
   renderIndexDigest,
   renderNewItemsEvent,
+  renderReadResult,
   type FetchResultView,
   type IndexHit,
   type ItemView,
+  type ReadEntry,
 } from './model-text.ts';
 import { clampInt, dueReason, localTimeParts, nextRunAt } from './schedule.ts';
 import { haystackOf, normalizeKeywords, paginate, type MatchMode } from './search.ts';
@@ -41,6 +44,8 @@ const INDEX_CACHE_MS = 45_000;
 const ARCHIVE_PER_FETCH = 30;
 /** 索引工具一页最多几条。 */
 const INDEX_PAGE_MAX = 5;
+/** `rss_read` 一次最多读几条全文。 */
+const READ_LIMIT = 10;
 
 export const PANEL_FEEDS = 'feeds';
 export const PANEL_MESSAGES = 'messages';
@@ -133,12 +138,32 @@ export const RSS_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
       required: ['feeds', 'keywords'],
     },
   },
+  {
+    name: 'rss_read',
+    description:
+      'Read the full text of messages by their number. Every message handed over by rss_fetch, rss_index or an rss.new_items event carries a number like "#12"; pass those numbers here to get the whole body, the source feed, the time and the link. Read-only, no network. In low-cost mode this is the only way to see the body.',
+    tags: ['read'],
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: ['string', 'number'] },
+          minItems: 1,
+          description: 'Message numbers, e.g. ["#12", "13", 14].',
+        },
+      },
+      required: ['ids'],
+    },
+  },
 ];
 
 /** 索引时每个源翻到的条目与失败原因。 */
 interface IndexFeedResult {
   feed: FeedRecord;
-  entries: FeedEntry[];
+  /** 带存档编号的条目；编号在写档时分配。 */
+  entries: Array<FeedEntry & { seq?: number }>;
   /** 源里条目多于上限时被略过的数量。 */
   truncated: number;
   error?: string;
@@ -199,11 +224,15 @@ export class RssWorld implements World {  readonly id = 'rss';
       .sort()
       .pop();
     const archive = this.store.archive().length;
+    const lowCost = this.lowCost();
     return {
       'rss.feeds': renderFeedList(feeds),
-      'rss.state': feeds.length
-        ? `${feeds.length} 个源（${enabled.length} 个启用）；${lastSuccess ? `最近一次成功拉取在 ${fmtLocal(lastSuccess, this.timezone())}` : '还没成功拉取过'}`
-        : '还没有订阅任何源。',
+      'rss.state': [
+        feeds.length
+          ? `${feeds.length} 个源（${enabled.length} 个启用）；${lastSuccess ? `最近一次成功拉取在 ${fmtLocal(lastSuccess, this.timezone())}` : '还没成功拉取过'}`
+          : '还没有订阅任何源。',
+        lowCost ? '低消耗模式开着：消息只给编号与标题，正文要用 rss_read 按编号读。' : '',
+      ].filter(Boolean).join(' '),
       'rss.archive': `${archive} 条`,
       'rss.timezone': this.timezone(),
     };
@@ -218,6 +247,10 @@ export class RssWorld implements World {  readonly id = 'rss';
       {
         ...RSS_TOOL_DECLS[1],
         handler: (args, ctx) => this.indexTool(args, ctx.signal),
+      },
+      {
+        ...RSS_TOOL_DECLS[2],
+        handler: async (args) => this.readTool(args),
       },
     ];
   }
@@ -433,15 +466,24 @@ export class RssWorld implements World {  readonly id = 'rss';
     this.store.update(feed.id, patch as Parameters<FeedStore['update']>[1]);
     if (fresh.length) this.store.markSeen(feed.id, fresh.map((entry) => entry.id));
 
+    // 先写存档：编号在那里分配，回头递给模型的每一条才带得上 #n。
+    const seqOf = new Map<string, number>();
     if (entries.length) {
-      this.store.pushArchive(
+      const stored = this.store.pushArchive(
         entries.slice(0, ARCHIVE_PER_FETCH).map((entry) => this.toArchive(feed, entry, stamp)),
       );
+      for (const row of stored) seqOf.set(row.entryId, row.seq);
     }
 
+    // 存档里已经有这条（比如上一轮写过）时也要拿到原编号。
+    const seqFor = (entryId: string): number | undefined => {
+      if (seqOf.has(entryId)) return seqOf.get(entryId);
+      return this.store.archive().find((row) => row.feedId === feed.id && row.entryId === entryId)?.seq;
+    };
+
     const handedOver = fresh.length
-      ? fresh.slice(0, feed.maxNewItems).map((entry) => this.toView(entry, true))
-      : entries.slice(0, feed.maxNewItems).map((entry) => this.toView(entry, false));
+      ? fresh.slice(0, feed.maxNewItems).map((entry) => this.toView(entry, true, seqFor(entry.id)))
+      : entries.slice(0, feed.maxNewItems).map((entry) => this.toView(entry, false, seqFor(entry.id)));
 
     const result: FetchResultView = {
       feed,
@@ -451,7 +493,7 @@ export class RssWorld implements World {  readonly id = 'rss';
     };
 
     if (fresh.length && feed.enabled) {
-      const text = renderNewItemsEvent(result, this.timezone(), this.clampBody());
+      const text = renderNewItemsEvent(result, this.timezone(), this.clampBody(), this.lowCost());
       this.pushEvent(feed, text).catch((error: unknown) => {
         this.log.warn('新消息事件投递失败', { error: String(error) });
       });
@@ -464,8 +506,9 @@ export class RssWorld implements World {  readonly id = 'rss';
     return result;
   }
 
-  private toView(entry: FeedEntry, isNew: boolean): ItemView {
+  private toView(entry: FeedEntry, isNew: boolean, seq?: number): ItemView {
     return {
+      ...(typeof seq === 'number' ? { seq } : {}),
       title: entry.title,
       link: entry.link,
       body: entry.body,
@@ -475,7 +518,8 @@ export class RssWorld implements World {  readonly id = 'rss';
     };
   }
 
-  private toArchive(feed: FeedRecord, entry: FeedEntry, fetchedAt: string): ArchiveEntry {
+  /** 存档行；编号由 `pushArchive` 分配，这里不带。 */
+  private toArchive(feed: FeedRecord, entry: FeedEntry, fetchedAt: string): Omit<ArchiveEntry, 'seq'> {
     return {
       feedId: feed.id,
       entryId: entry.id,
@@ -495,6 +539,7 @@ export class RssWorld implements World {  readonly id = 'rss';
       .filter((entry) => entry.feedId === feedId)
       .slice(0, Math.max(1, limit))
       .map((entry) => ({
+        seq: entry.seq,
         title: entry.title,
         link: entry.link,
         body: entry.body,
@@ -506,6 +551,11 @@ export class RssWorld implements World {  readonly id = 'rss';
 
   private clampBody(): number {
     return Math.min(2000, Math.max(0, this.cfg().maxBodyChars ?? RSS_DEFAULTS.maxBodyChars));
+  }
+
+  /** 低消耗模式：只给编号、来源、时间、标题；正文留给 rss_read。 */
+  private lowCost(): boolean {
+    return this.cfg().lowCost === true;
   }
 
   private async pushEvent(feed: FeedRecord, text: string): Promise<void> {
@@ -579,6 +629,7 @@ export class RssWorld implements World {  readonly id = 'rss';
       timezone: this.timezone(),
       maxChars: this.clampBody(),
       notes,
+      lowCost: this.lowCost(),
     });
   }
 
@@ -645,6 +696,7 @@ export class RssWorld implements World {  readonly id = 'rss';
         const matched = keywords.filter((keyword) => haystack.includes(keyword.toLowerCase()));
         if (mode === 'all' ? matched.length !== keywords.length : matched.length === 0) continue;
         hits.push({
+          ...(typeof entry.seq === 'number' ? { seq: entry.seq } : {}),
           feed: result.feed,
           title: entry.title,
           link: entry.link,
@@ -673,6 +725,7 @@ export class RssWorld implements World {  readonly id = 'rss';
       feedCount: fetched.filter((result) => !result.error).length,
       truncated,
       hits: paged.rows,
+      lowCost: this.lowCost(),
     });
 
     return notes.length ? `${digest}\n\n${notes.join('\n')}` : digest;
@@ -695,15 +748,22 @@ export class RssWorld implements World {  readonly id = 'rss';
       }
       const parsed = parseFeed(response.text);
       const entries = sortNewestFirst(parsed.entries);
+      const limited = entries.slice(0, limit);
+      const stamp = new Date(this.nowMs()).toISOString();
+      // 索引命中的条目也要有编号，低消耗模式下模型才能用 rss_read 读全文。
+      const seqOf = new Map<string, number>();
+      if (limited.length) {
+        const stored = this.store.pushArchive(limited.map((entry) => this.toArchive(feed, entry, stamp)));
+        for (const row of stored) seqOf.set(row.entryId, row.seq);
+      }
       const result: IndexFeedResult = {
         feed,
-        entries: entries.slice(0, limit),
+        entries: limited.map((entry) => {
+          const seq = seqOf.get(entry.id) ?? this.archiveSeq(feed.id, entry.id);
+          return typeof seq === 'number' ? { ...entry, seq } : entry;
+        }),
         truncated: Math.max(0, entries.length - limit),
       };
-      const stamp = new Date(this.nowMs()).toISOString();
-      if (result.entries.length) {
-        this.store.pushArchive(result.entries.map((entry) => this.toArchive(feed, entry, stamp)));
-      }
       this.recentIndex.set(feed.id, { at: this.nowMs(), result });
       return result;
     } catch (error) {
@@ -714,6 +774,70 @@ export class RssWorld implements World {  readonly id = 'rss';
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /** 存档里这条消息的编号（之前写过就有）。 */
+  private archiveSeq(feedId: string, entryId: string): number | undefined {
+    return this.store.archive().find((row) => row.feedId === feedId && row.entryId === entryId)?.seq;
+  }
+
+  // ── 工具：按编号读全文 ──────────────────────────────────────────────
+
+  /**
+   * `rss_read`：模型拿着 `#12` 这样的编号来要正文。纯读存档，不发网络请求。
+   * 编号认不出、越界、已被存档上限挤掉，都写进回执，不当作失败——它只是想知道那条讲了什么。
+   */
+  private readTool(args: Record<string, unknown>): string | ToolOutcome {
+    const raw = Array.isArray(args.ids) ? args.ids : args.ids === undefined ? [] : [args.ids];
+    const wanted: number[] = [];
+    const unparsed: string[] = [];
+    for (const item of raw) {
+      const parsed = parseSeq(item);
+      if (parsed === null) {
+        unparsed.push(String(item ?? ''));
+        continue;
+      }
+      if (!wanted.includes(parsed)) wanted.push(parsed);
+    }
+    if (!wanted.length && !unparsed.length) {
+      return { text: 'rss_read 需要至少一个编号，比如 {"ids":["#12","13"]}。', failed: true };
+    }
+
+    const titles = new Map(this.store.list().map((feed) => [feed.id, feed.title]));
+    const entries: ReadEntry[] = [];
+    const missing: number[] = [];
+    // 一次最多读 10 条：再多就该用 rss_index 缩小范围，而不是把整档塞进上下文。
+    for (const seq of wanted.slice(0, READ_LIMIT)) {
+      const row = this.store.bySeq(seq);
+      if (!row) {
+        missing.push(seq);
+        continue;
+      }
+      entries.push({
+        seq: row.seq,
+        feedTitle: titles.get(row.feedId) ?? row.feedId,
+        title: row.title,
+        link: row.link,
+        body: row.body,
+        summary: row.summary,
+        ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
+        fetchedAt: row.fetchedAt,
+      });
+    }
+    const overflow = wanted.slice(READ_LIMIT);
+
+    const text = renderReadResult({
+      timezone: this.timezone(),
+      maxChars: this.clampBody(),
+      entries,
+      missing,
+      unparsed,
+      range: this.store.seqRange(),
+    });
+    const suffix = overflow.length
+      ? `\n\n（这次只要前 ${READ_LIMIT} 条：#${overflow.join('、#')} 没读。分两次调。）`
+      : '';
+    return entries.length ? `${text}${suffix}` : { text: `${text}${suffix}`, failed: true };
   }
 
   // ── WebUI ───────────────────────────────────────────────────────────
@@ -844,6 +968,7 @@ export class RssWorld implements World {  readonly id = 'rss';
       rows: page.rows.map((entry) => ({
         feedId: entry.feedId,
         feedTitle: titles.get(entry.feedId) ?? entry.feedId,
+        seq: entry.seq,
         title: entry.title,
         link: entry.link,
         summary: entry.summary,
@@ -898,6 +1023,19 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * 编号解析：接受 `#12`、`12`、`＃12`、`" 12 "`，也接受数字本身。
+ * 认不出返回 null（交给调用方写进「认不出」那一栏）。
+ */
+export function parseSeq(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const text = value.trim().replace(/^[#＃\s]+/, '');
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number.parseInt(text, 10);
+  return parsed > 0 ? parsed : null;
 }
 
 /** 界面来的参数什么形状都可能有，这里只挑认识的键。 */

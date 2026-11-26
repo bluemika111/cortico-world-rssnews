@@ -382,12 +382,13 @@ var messagesPanel = {
       const titleLine = list.append(row.title, "plain");
       titleLine.style.cursor = "pointer";
       titleLine.title = S.readMore;
-      list.append(`${row.timeText} \xB7 ${row.feedTitle}`, "dim");
+      const tag = typeof row.seq === "number" ? `#${row.seq} \xB7 ` : "";
+      list.append(`${tag}${row.timeText} \xB7 ${row.feedTitle}`, "dim");
       if (row.summary && row.summary !== row.title) list.append(row.summary, "plain");
       list.append("", "dim");
       const open = () => {
         const body = ui.h("div");
-        body.append(ui.msgline(`${row.feedTitle} \xB7 ${row.timeText}`));
+        body.append(ui.msgline(`${typeof row.seq === "number" ? `#${row.seq} \xB7 ` : ""}${row.feedTitle} \xB7 ${row.timeText}`));
         const text = ui.h("div");
         text.textContent = row.body || row.summary || S.emptyBody;
         text.style.whiteSpace = "pre-wrap";

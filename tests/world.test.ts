@@ -190,7 +190,8 @@ describe('关键词索引工具', () => {
     expect(first).toContain('还有 2 条');
     const second = await callTool(h, 'rss_index', { feeds: ['https://index.example.com/feed'], keywords: ['英伟达'], page: 2 });
     expect(second).toContain('第 2/2 页');
-    expect(second).toContain('7. 「index.example.com」');
+    // 命中行现在带存档编号，`#7` 是第 7 条
+    expect(second).toContain('#7');
   });
 
   it('all 模式要求每个关键词都中', async () => {

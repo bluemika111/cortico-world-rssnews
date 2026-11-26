@@ -178,6 +178,8 @@ describe('消息页签', () => {
     expect(text).toContain('英伟达发布新一代芯片');
     expect(text).toContain('央视新闻 world');
     expect(text).toContain('4 条');
+    // 消息行带编号，和模型手里的是同一个
+    expect(text).toContain('#1');
 
     const query = host.root.querySelector('input[type="search"]') as HTMLInputElement;
     query.value = '韩国';

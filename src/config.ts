@@ -3,6 +3,8 @@ import type { ConfigGroup } from 'cortico/core/types.ts';
 /** config.json 的 worlds.rss 段；键扁平，WebUI 的配置接口写不了对象。 */
 export interface RssConfigSection {
   enabled: boolean;
+  /** 低消耗模式：只递编号、来源、时间、标题，正文用 rss_read 按编号去读。 */
+  lowCost: boolean;
   /** 新消息到达时叫醒她（true）还是只排队等她下次活动（false）。 */
   wakeOnNewItems: boolean;
   /** 递给模型的正文最多多少字；0 表示只给标题与时间。 */
@@ -25,6 +27,7 @@ export interface RssConfigSection {
 
 export const RSS_DEFAULTS: RssConfigSection = {
   enabled: false,
+  lowCost: false,
   wakeOnNewItems: false,
   maxBodyChars: 240,
   defaultIntervalMinutes: 30,
@@ -44,6 +47,12 @@ export function rssConfigGroup(): ConfigGroup {
       type: 'object',
       title: 'RSS / Atom 订阅',
       properties: {
+        'worlds.rss.lowCost': {
+          type: 'boolean',
+          title: '低消耗模式',
+          description: '开着时，事件与工具回执只给编号、来源、时间、标题，不附正文；她自己用 rss_read 按编号读全文。省上下文，代价是多一次工具调用。',
+          'x-hot': true,
+        },
         'worlds.rss.wakeOnNewItems': {
           type: 'boolean',
           title: '新消息叫醒她',

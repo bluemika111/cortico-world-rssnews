@@ -32,8 +32,10 @@ export interface FeedRecord {
   seen: string[];
 }
 
-/** 给人看的一条消息（消息页签与索引工具共用）。 */
+/** 给人看的一条消息（消息页签、索引工具与 rss_read 共用）。 */
 export interface ArchiveEntry {
+  /** 全局递增的短编号，展示成 `#12`；模型用它来点名要读哪一条。 */
+  seq: number;
   feedId: string;
   entryId: string;
   title: string;

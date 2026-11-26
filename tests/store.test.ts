@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FeedStore } from '../src/store.ts';
 import type { FeedDefaults } from '../src/types.ts';
@@ -103,6 +103,77 @@ describe('落盘', () => {
     const seen = store.get(feed.id)?.seen ?? [];
     expect(seen).toHaveLength(400);
     expect(seen[0]).toBe('k50');
+  });
+});
+
+describe('消息编号', () => {
+  it('每条新消息拿到递增的编号，重推不换号', () => {
+    const feed = store.add({ url: 'https://seq.example.com/feed' }, defaults);
+    const first = store.pushArchive([
+      { feedId: feed.id, entryId: 'e1', title: 'A', link: '', summary: '', body: '', fetchedAt: '2026-11-24T01:00:00.000Z' },
+      { feedId: feed.id, entryId: 'e2', title: 'B', link: '', summary: '', body: '', fetchedAt: '2026-11-24T02:00:00.000Z' },
+    ]);
+    expect(first.map((row) => row.seq)).toEqual([1, 2]);
+    expect(store.bySeq(1)?.entryId).toBe('e1');
+
+    // 同一条再来一次：不重复、不换号
+    const again = store.pushArchive([
+      { feedId: feed.id, entryId: 'e1', title: 'A', link: '', summary: '', body: '', fetchedAt: '2026-11-24T03:00:00.000Z' },
+    ]);
+    expect(again).toHaveLength(0);
+    expect(store.bySeq(1)?.entryId).toBe('e1');
+
+    const third = store.pushArchive([
+      { feedId: feed.id, entryId: 'e3', title: 'C', link: '', summary: '', body: '', fetchedAt: '2026-11-24T04:00:00.000Z' },
+    ]);
+    expect(third[0].seq).toBe(3);
+    expect(store.seqRange()).toEqual({ min: 1, max: 3 });
+  });
+
+  it('编号跨重启保持，清档也不回收', () => {
+    const feed = store.add({ url: 'https://seq2.example.com/feed' }, defaults);
+    store.pushArchive([
+      { feedId: feed.id, entryId: 'e1', title: 'A', link: '', summary: '', body: '', fetchedAt: '2026-11-24T01:00:00.000Z' },
+    ]);
+    store.clearArchive();
+    const again = new FeedStore({ dir, archiveLimit: () => 100 });
+    again.load();
+    expect(again.seqRange()).toBe(null);
+    const after = again.pushArchive([
+      { feedId: feed.id, entryId: 'e2', title: 'B', link: '', summary: '', body: '', fetchedAt: '2026-11-24T02:00:00.000Z' },
+    ]);
+    // 旧编号 1 已经不在存档里，但新号继续往后走，不回头复用
+    expect(after[0].seq).toBe(2);
+  });
+
+  it('老存档没有编号时按时间补，且只补一次', () => {
+    const legacyDir = mkdtempSync(join(root, 'legacy-'));
+    writeFileSync(join(legacyDir, 'archive.json'), JSON.stringify({
+      version: 1,
+      entries: [
+        { feedId: 'f1', entryId: 'new', title: '新', link: '', summary: '', body: '', publishedAt: '2026-11-24T05:00:00.000Z', fetchedAt: '2026-11-24T05:00:00.000Z' },
+        { feedId: 'f1', entryId: 'old', title: '旧', link: '', summary: '', body: '', publishedAt: '2026-11-24T01:00:00.000Z', fetchedAt: '2026-11-24T01:00:00.000Z' },
+      ],
+    }), 'utf8');
+
+    const legacy = new FeedStore({ dir: legacyDir, archiveLimit: () => 100 });
+    legacy.load();
+    // 旧的号更小
+    expect(legacy.bySeq(1)?.entryId).toBe('old');
+    expect(legacy.bySeq(2)?.entryId).toBe('new');
+
+    const reopened = new FeedStore({ dir: legacyDir, archiveLimit: () => 100 });
+    reopened.load();
+    expect(reopened.bySeq(1)?.entryId).toBe('old');
+
+    const next = reopened.pushArchive([
+      { feedId: 'f1', entryId: 'newest', title: '最新', link: '', summary: '', body: '', fetchedAt: '2026-11-24T06:00:00.000Z' },
+    ]);
+    expect(next[0].seq).toBe(3);
+
+    const saved = JSON.parse(readFileSync(join(legacyDir, 'archive.json'), 'utf8')) as { nextSeq?: number };
+    expect(saved.nextSeq).toBe(3);
+    rmSync(legacyDir, { recursive: true, force: true });
   });
 });
 

@@ -50,7 +50,7 @@ describe('扩展契约', () => {
 
   it('两个工具的声明都在 describe 里，事件类型一致', () => {
     const names = (RSS.describe?.tools ?? []).map((tool) => tool.name);
-    expect(names).toEqual(['rss_fetch', 'rss_index']);
+    expect(names).toEqual(['rss_fetch', 'rss_index', 'rss_read']);
     expect((RSS.describe?.events ?? []).map((event) => event.type)).toEqual(['rss.new_items']);
     expect(RSS.describe?.tools.every((tool) => tool.tags.includes('read'))).toBe(true);
   });
