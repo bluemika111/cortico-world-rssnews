@@ -828,7 +828,8 @@ export class RssWorld implements World {  readonly id = 'rss';
 
     const text = renderReadResult({
       timezone: this.timezone(),
-      maxChars: this.clampBody(),
+      // 读全文就是全文：不套「递给模型的正文长度」，存档本身已经限到 4000 字。
+      maxChars: 0,
       entries,
       missing,
       unparsed,

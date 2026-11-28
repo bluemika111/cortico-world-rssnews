@@ -59,7 +59,10 @@ describe('扩展契约', () => {
     const defaults = RSS.defaults();
     expect(defaults.enabled).toBe(false);
     expect(defaults.defaultTimeoutMs).toBe(20_000);
-    expect(defaults.defaultMaxNewItems).toBe(3);
+    expect(defaults.defaultMaxNewItems).toBe(5);
+    expect(defaults.maxBodyChars).toBe(1200);
+    // 低消耗模式默认开着
+    expect(defaults.lowCost).toBe(true);
     const world = RSS.create({
       id: 'rss',
       cfg: defaults,

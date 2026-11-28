@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-rssnews",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Cortico World: subscribe to RSS/Atom feeds, pull them on a per-feed schedule, and hand new items to Coo",
   "license": "MIT",

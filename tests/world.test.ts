@@ -28,7 +28,8 @@ function harness(overrides: Partial<RssConfigSection> = {}, xml = RSS_SAMPLE): H
   mkdirSync(root, { recursive: true });
   const dir = mkdtempSync(join(root, 'world-'));
   dirs.push(dir);
-  const cfg: RssConfigSection = { ...RSS_DEFAULTS, ...overrides };
+  // 这个文件测的是「不省上下文」的完整格式；低消耗模式另有 lowcost.test.ts。
+  const cfg: RssConfigSection = { ...RSS_DEFAULTS, lowCost: false, ...overrides };
   const calls: string[] = [];
   let body = xml;
   let at = START;
@@ -100,10 +101,22 @@ describe('立即拉取工具', () => {
     expect(text).toContain('英伟达发布新一代芯片');
     expect(text).toContain('韩国加码高考作弊举报悬赏');
     expect(text).toContain('伊朗法院要求美国支付赔偿金');
-    // 默认一次 3 条，第 4 条不递
-    expect(text).not.toContain('哥伦比亚爆炸袭击受伤人数升至19人');
+    // 默认一次 5 条，这个样例只有 4 条，全部递上来、没有剩余
+    expect(text).toContain('哥伦比亚爆炸袭击受伤人数升至19人');
     expect(text).toContain('新消息共 4 条');
-    expect(text).toContain('另有 1 条更新的没递上来');
+    expect(text).not.toContain('另有');
+  });
+
+  it('源 id 写在每段的开头，多源时不会指错', async () => {
+    const h = harness();
+    const one = await addFeed(h, { url: 'https://one.example.com/feed', title: '第一个源' });
+    await addFeed(h, { url: 'https://two.example.com/feed', title: '第二个源' });
+    const text = await callTool(h, 'rss_fetch');
+    expect(text).toContain('【第一个源（id: ');
+    expect(text).toContain('【第二个源（id: ');
+    // 末尾不再单独喊一句“这个源的 id 是”
+    expect(text).not.toContain('这个源的 id 是');
+    expect(text).toContain(one);
   });
 
   it('第二轮没有新消息时给最近的几条，并标明已读过', async () => {
@@ -310,7 +323,8 @@ describe('WebUI 数据面', () => {
     const id = await addFeed(h, { url: 'https://pull.example.com/feed' });
     const result = await ui(h.world).invoke?.('feeds', 'pull', [id]) as { newCount: number; itemCount: number };
     expect(result.newCount).toBe(4);
-    expect(result.itemCount).toBe(3);
+    // 默认一次 5 条，样例只有 4 条
+    expect(result.itemCount).toBe(4);
     expect(h.calls).toHaveLength(1);
   });
 

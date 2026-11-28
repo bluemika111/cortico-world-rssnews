@@ -27,12 +27,12 @@ export interface RssConfigSection {
 
 export const RSS_DEFAULTS: RssConfigSection = {
   enabled: false,
-  lowCost: false,
+  lowCost: true,
   wakeOnNewItems: false,
-  maxBodyChars: 240,
+  maxBodyChars: 1200,
   defaultIntervalMinutes: 30,
   defaultTimeoutMs: 20_000,
-  defaultMaxNewItems: 3,
+  defaultMaxNewItems: 5,
   defaultAllowModel: true,
   archiveLimit: 500,
   indexFetchLimit: 50,
@@ -62,9 +62,9 @@ export function rssConfigGroup(): ConfigGroup {
         'worlds.rss.maxBodyChars': {
           type: 'integer',
           title: '递给模型的正文长度',
-          description: '每条消息正文最多带多少字（0 表示只给标题与时间）。界面里的消息不受这条限制。',
+          description: '事件与 rss_fetch / rss_index 回执里每条正文最多带多少字（0 表示只给标题与时间）。rss_read 读全文不受这条限制，界面里的消息也不受。',
           minimum: 0,
-          maximum: 2000,
+          maximum: 4000,
           'x-hot': true,
         },
         'worlds.rss.defaultIntervalMinutes': {

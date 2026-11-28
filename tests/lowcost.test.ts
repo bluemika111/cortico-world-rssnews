@@ -21,7 +21,7 @@ interface Harness {
   cfg: RssConfigSection;
 }
 
-function harness(overrides: Partial<RssConfigSection> = {}): Harness {
+function harness(overrides: Partial<RssConfigSection> = {}, xml = RSS_SAMPLE): Harness {
   mkdirSync(root, { recursive: true });
   const dir = mkdtempSync(join(root, 'lowcost-'));
   dirs.push(dir);
@@ -31,11 +31,14 @@ function harness(overrides: Partial<RssConfigSection> = {}): Harness {
     cfg,
     timezone: TZ,
     dataDir: dir,
-    fetchText: async () => ({ text: RSS_SAMPLE, status: 200, notModified: false, bytes: RSS_SAMPLE.length }),
+    fetchText: async () => ({ text: xml, status: 200, notModified: false, bytes: xml.length }),
     now: () => START,
   });
   return { world, host, cfg };
 }
+
+/** 换一份源内容时用这个别名，读起来更清楚。 */
+const harnessWith = harness;
 
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop() as string, { recursive: true, force: true });
@@ -102,6 +105,17 @@ describe('低消耗模式', () => {
     expect(text).toContain('rss_read');
     await h.world.stop();
   });
+
+  it('事件头带上源 id，末尾不再重复', async () => {
+    const h = harness({ lowCost: true });
+    const id = await addFeed(h, { intervalMinutes: '30', title: '央视新闻 world' });
+    await h.world.start(h.host);
+    await waitFor(() => h.host.events.length > 0, 3000, '新消息事件');
+    const text = h.host.events[0].text;
+    expect(text).toContain(`[RSS] 央视新闻 world（id: ${id}）有`);
+    expect(text).not.toContain('这个源的 id 是');
+    await h.world.stop();
+  }, 10_000);
 
   it('索引命中只给标题，同样带编号', async () => {
     const h = harness({ lowCost: true });
@@ -191,6 +205,23 @@ describe('按编号读全文', () => {
     const text = await callTool(h, 'rss_read', { ids });
     expect(text).toContain('这次只要前 10 条');
     expect(text).toContain('没读');
+  });
+
+  it('读全文不受「递给模型的正文长度」限制', async () => {
+    // 1400 字的正文 + 一个只在结尾出现的标记
+    const filler = '这是一段很长的正文。'.repeat(140);
+    const xml = `<rss version="2.0"><channel><title>长文源</title><link>https://long.example.com</link>
+      <item><title>很长的新闻</title><description>${filler}结尾标记ABCXYZ</description>
+      <link>https://long.example.com/1</link><guid>long-1</guid>
+      <pubDate>Mon, 24 Nov 2026 10:00:00 GMT</pubDate></item>
+    </channel></rss>`;
+    const h = harnessWith({ lowCost: true, maxBodyChars: 1200 }, xml);
+    await addFeed(h);
+    await callTool(h, 'rss_fetch');
+    const text = await callTool(h, 'rss_read', { ids: ['#1'] });
+    expect(text).toContain('很长的新闻');
+    // 结尾那句在 1200 字之后，仍然要读到
+    expect(text).toContain('结尾标记ABCXYZ');
   });
 
   it('编号与拉取时展示的一致，跨拉取不变', async () => {

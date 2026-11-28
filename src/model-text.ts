@@ -102,6 +102,11 @@ export function renderFeedList(feeds: readonly FeedRecord[]): string {
   return feeds.map((feed) => renderFeedLine(feed)).join('\n');
 }
 
+/** 段头：`IT之家（id: f1b92rth）`。一次递给多个源时，id 必须跟着每个源走，别放到末尾。 */
+export function feedHeading(title: string, id: string): string {
+  return `${title}（id: ${id}）`;
+}
+
 /** 定时拉取抓到新消息时推出的事件正文。 */
 export function renderNewItemsEvent(
   result: FetchResultView,
@@ -111,8 +116,7 @@ export function renderNewItemsEvent(
 ): string {
   const { feed, items } = result;
   const count = result.newCount;
-  const head = `[RSS] ${feed.title} 有 ${count} 条新消息`;
-  const lines: string[] = [head];
+  const lines: string[] = [`[RSS] ${feedHeading(feed.title, feed.id)}有 ${count} 条新消息`];
   for (const item of items) {
     lines.push(renderItem(item, {
       timezone,
@@ -129,8 +133,8 @@ export function renderNewItemsEvent(
     lowCost
       ? `低消耗模式：上面只有编号、来源、时间、标题。要读哪条的全文，把它的编号交给 rss_read（比如 rss_read {"ids":["${
         seqTag(items[0]?.seq) || '#1'
-      }"]}）。要更多或者按关键词翻用 rss_index，想马上再拉一次用 rss_fetch（这个源的 id 是 ${feed.id}）。`
-      : `要更多或者要按关键词翻，用 rss_index（这个源的 id 是 ${feed.id}）；想马上再拉一次用 rss_fetch。`,
+      }"]}）。要更多或者按关键词翻用 rss_index，想马上再拉一次用 rss_fetch。`
+      : '要更多或者要按关键词翻，用 rss_index；想马上再拉一次用 rss_fetch。',
   );
   return lines.join('\n');
 }
@@ -158,7 +162,7 @@ export function renderFetchDigest(results: readonly FetchResultView[], opts: Fet
 
   for (const result of results) {
     lines.push('');
-    lines.push(`【${result.feed.title}】（${result.feed.id}）${result.cached ? '· 用的是刚才拉到的结果' : ''}`);
+    lines.push(`【${feedHeading(result.feed.title, result.feed.id)}】${result.cached ? '· 用的是刚才拉到的结果' : ''}`);
     if (result.error) {
       lines.push(`  拉取失败：${result.error}`);
       continue;
